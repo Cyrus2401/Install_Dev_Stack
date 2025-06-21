@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script d'installation automatique pour stack de développement Debian 12
-# Apache, MySQL, PostgreSQL, PHP, Composer, Adminer, VS Code, Chrome, etc.
+# Apache, MariaDB, PostgreSQL, PHP, Composer, Adminer, etc.
 
 set -e  # Arrêter le script en cas d'erreur
 
@@ -49,13 +49,26 @@ install_base_packages() {
     print_status "Installation des paquets de base..."
     sudo apt install -y \
         apache2 \
-        mysql-server \
+        mariadb-server \
+        mariadb-client \
         postgresql \
         postgresql-contrib \
         php \
-        php-apache2handler \
+        php-cli \
+        php-fpm \
+        php-common \
+        php-opcache \
         php-mysql \
         php-pgsql \
+        php-sqlite3 \
+        php-intl \
+        php-imagick \
+        php-ldap \
+        php-soap \
+        php-ctype \
+        php-tokenizer \
+        php-dom \
+        php-fileinfo \
         php-gd \
         php-curl \
         php-zip \
@@ -76,44 +89,6 @@ install_base_packages() {
         gnupg \
         lsb-release
     print_success "Paquets de base installés"
-}
-
-# Installation de VS Code
-install_vscode() {
-    print_status "Installation de VS Code..."
-    
-    # Ajout de la clé GPG Microsoft
-    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /tmp/packages.microsoft.gpg
-    sudo install -o root -g root -m 644 /tmp/packages.microsoft.gpg /etc/apt/trusted.gpg.d/
-    
-    # Ajout du repository
-    echo "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/trusted.gpg.d/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | sudo tee /etc/apt/sources.list.d/vscode.list > /dev/null
-    
-    # Installation
-    sudo apt update
-    sudo apt install -y code
-    
-    # Nettoyage
-    rm -f /tmp/packages.microsoft.gpg
-    
-    print_success "VS Code installé"
-}
-
-# Installation de Google Chrome
-install_chrome() {
-    print_status "Installation de Google Chrome..."
-    
-    # Téléchargement et installation du paquet .deb
-    wget -q -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb
-    
-    # Correction des dépendances si nécessaire
-    sudo apt-get install -f -y
-    
-    # Nettoyage
-    rm -f /tmp/google-chrome-stable_current_amd64.deb
-    
-    print_success "Google Chrome installé"
 }
 
 # Installation de Composer
@@ -155,39 +130,73 @@ EOF
     print_success "Adminer installé (accessible via http://localhost/adminer)"
 }
 
-# Démarrage des services
+# Démarrage et redémarrage des services
 start_services() {
-    print_status "Démarrage des services..."
+    print_status "Configuration et démarrage des services..."
     
-    # Démarrage et activation des services
+    # Activation des services pour démarrage automatique
     sudo systemctl enable apache2
-    sudo systemctl start apache2
-    
-    sudo systemctl enable mysql
-    sudo systemctl start mysql
-    
+    sudo systemctl enable mariadb
     sudo systemctl enable postgresql
+    
+    print_status "Démarrage initial des services..."
+    
+    # Démarrage des services
+    sudo systemctl start apache2
+    sudo systemctl start mariadb
     sudo systemctl start postgresql
     
-    # Redémarrage d'Apache pour prendre en compte PHP et Adminer
-    sudo systemctl reload apache2
+    print_status "Redémarrage des services pour prise en compte des configurations..."
     
-    print_success "Services démarrés"
+    # Redémarrage des services pour s'assurer de la prise en compte des configurations
+    sudo systemctl restart mariadb
+    sudo systemctl restart postgresql
+    sudo systemctl restart apache2
+    
+    # Vérification du statut des services
+    print_status "Vérification du statut des services..."
+    
+    if sudo systemctl is-active --quiet apache2; then
+        print_success "Apache2 actif"
+    else
+        print_warning "Apache2 non actif - tentative de redémarrage..."
+        sudo systemctl restart apache2
+    fi
+    
+    if sudo systemctl is-active --quiet mariadb; then
+        print_success "MariaDB actif"
+    else
+        print_warning "MariaDB non actif - tentative de redémarrage..."
+        sudo systemctl restart mariadb
+    fi
+    
+    if sudo systemctl is-active --quiet postgresql; then
+        print_success "PostgreSQL actif"
+    else
+        print_warning "PostgreSQL non actif - tentative de redémarrage..."
+        sudo systemctl restart postgresql
+    fi
+    
+    print_success "Tous les services sont configurés et démarrés"
 }
 
-# Exécution de mysql_secure_installation
-secure_mysql() {
-    print_status "Sécurisation de MySQL..."
-    print_warning "Vous allez être invité à configurer la sécurité de MySQL."
+# Exécution de mysql_secure_installation pour MariaDB
+secure_mariadb() {
+    print_status "Sécurisation de MariaDB..."
+    print_warning "Vous allez être invité à configurer la sécurité de MariaDB."
     print_warning "Répondez aux questions selon vos préférences de sécurité."
     
-    # Attendre que MySQL soit complètement démarré
-    sleep 3
+    # Attendre que MariaDB soit complètement démarré
+    sleep 5
     
-    # Exécution de mysql_secure_installation
+    # Exécution de mysql_secure_installation (même commande pour MariaDB)
     sudo mysql_secure_installation
     
-    print_success "MySQL sécurisé"
+    # Redémarrage final de MariaDB après sécurisation
+    print_status "Redémarrage de MariaDB après sécurisation..."
+    sudo systemctl restart mariadb
+    
+    print_success "MariaDB sécurisé et redémarré"
 }
 
 # Affichage du résumé final
@@ -196,21 +205,28 @@ show_summary() {
     echo ""
     echo "=== RÉSUMÉ DES INSTALLATIONS ==="
     echo "✓ Apache 2 - http://localhost"
-    echo "✓ MySQL (sécurisé)"
+    echo "✓ MariaDB (sécurisé)"
     echo "✓ PostgreSQL"
-    echo "✓ PHP avec extensions"
+    echo "✓ PHP avec extensions complètes"
     echo "✓ Composer"
     echo "✓ Adminer - http://localhost/adminer"
-    echo "✓ VS Code"
-    echo "✓ Google Chrome"
     echo "✓ GParted"
     echo "✓ Node.js et npm"
     echo "✓ Git"
     echo "✓ curl"
     echo ""
+    echo "=== STATUT DES SERVICES ==="
+    apache_status=$(sudo systemctl is-active apache2)
+    mariadb_status=$(sudo systemctl is-active mariadb)
+    postgresql_status=$(sudo systemctl is-active postgresql)
+    
+    echo "Apache2: $apache_status"
+    echo "MariaDB: $mariadb_status"
+    echo "PostgreSQL: $postgresql_status"
+    echo ""
     echo "=== VERSIONS INSTALLÉES ==="
     echo "Apache: $(apache2 -v | head -n1)"
-    echo "MySQL: $(mysql --version)"
+    echo "MariaDB: $(mariadb --version)"
     echo "PostgreSQL: $(psql --version)"
     echo "PHP: $(php -v | head -n1)"
     echo "Composer: $(composer --version)"
@@ -221,24 +237,23 @@ show_summary() {
     echo "=== ACCÈS AUX SERVICES ==="
     echo "Apache: http://localhost"
     echo "Adminer: http://localhost/adminer"
-    echo "MySQL: Utilisez les identifiants configurés lors de mysql_secure_installation"
+    echo "MariaDB: Utilisez les identifiants configurés lors de mysql_secure_installation"
     echo "PostgreSQL: Utilisez 'sudo -u postgres psql' pour accéder en tant que postgres"
 }
 
 # Fonction principale
 main() {
     echo "=== INSTALLATION STACK DE DÉVELOPPEMENT DEBIAN 12 ==="
+    echo "=== Apache + MariaDB + PostgreSQL + PHP + Adminer ==="
     echo ""
     
     check_sudo
     update_system
     install_base_packages
-    install_vscode
-    install_chrome
     install_composer
     install_adminer
     start_services
-    secure_mysql
+    secure_mariadb
     show_summary
     
     print_success "Script terminé avec succès !"
