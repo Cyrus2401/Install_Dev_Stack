@@ -2,11 +2,11 @@
 /**
  * Script d'installation automatique pour stack de développement Debian 12
  * 
- * Installe : Apache, MySQL, PostgreSQL, PHP, Composer, Adminer, VS Code, 
- * Google Chrome, GParted, Node.js, npm, curl, git
+ * Installe : Apache, MariaDB, PostgreSQL, PHP (extensions complètes), Composer, 
+ * Adminer, GParted, Node.js, npm, curl, git
  * 
  * @author Assistant Claude
- * @version 1.0
+ * @version 2.2
  * @date 2025
  */
 
@@ -77,6 +77,16 @@ class DevStackInstaller {
     }
     
     /**
+     * Vérifie si un service est actif
+     * @param string $service Nom du service
+     * @return bool True si le service est actif
+     */
+    private function isServiceActive($service) {
+        $result = $this->executeCommand("sudo systemctl is-active --quiet $service");
+        return $result === 0;
+    }
+    
+    /**
      * Vérifie si l'utilisateur a les droits sudo
      * @throws Exception Si les droits sudo ne sont pas disponibles
      */
@@ -104,29 +114,46 @@ class DevStackInstaller {
     }
     
     /**
-     * Installe les paquets de base via apt
+     * Installe les paquets de base via apt avec extensions PHP complètes
      */
     private function installBasePackages() {
         $this->printStatus("Installation des paquets de base...");
         
-        // Liste des paquets à installer
+        // Liste complète des paquets à installer
         $packages = [
+            // Serveurs web et bases de données
             'apache2',
-            'mysql-server',
+            'mariadb-server',
+            'mariadb-client',
             'postgresql',
             'postgresql-contrib',
+            
+            // PHP et toutes ses extensions
             'php',
-            'php-apache2handler',
+            'php-cli',
+            'php-fpm',
+            'php-common',
+            'php-opcache',
             'php-mysql',
             'php-pgsql',
+            'php-sqlite3',
+            'php-intl',
+            'php-imagick',
+            'php-ldap',
+            'php-soap',
+            'php-ctype',
+            'php-tokenizer',
+            'php-dom',
+            'php-fileinfo',
             'php-gd',
             'php-curl',
             'php-zip',
             'php-xml',
             'php-mbstring',
             'php-json',
-            'php-intl',
             'php-bcmath',
+            
+            // Outils système et développement
             'gparted',
             'nodejs',
             'npm',
@@ -149,65 +176,6 @@ class DevStackInstaller {
         }
         
         $this->printSuccess("Paquets de base installés");
-    }
-    
-    /**
-     * Installe Visual Studio Code
-     */
-    private function installVSCode() {
-        $this->printStatus("Installation de VS Code...");
-        
-        // Ajout de la clé GPG Microsoft
-        $result = $this->executeCommand("wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /tmp/packages.microsoft.gpg");
-        if ($result !== 0) {
-            $this->printError("Erreur lors du téléchargement de la clé GPG Microsoft");
-            return;
-        }
-        
-        // Installation de la clé
-        $this->executeCommand("sudo install -o root -g root -m 644 /tmp/packages.microsoft.gpg /etc/apt/trusted.gpg.d/");
-        
-        // Ajout du repository
-        $repoLine = 'deb [arch=amd64,arm64,armhf signed-by=/etc/apt/trusted.gpg.d/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main';
-        $this->executeCommand("echo '$repoLine' | sudo tee /etc/apt/sources.list.d/vscode.list > /dev/null");
-        
-        // Mise à jour et installation
-        $this->executeCommand("sudo apt update");
-        $result = $this->executeCommand("sudo apt install -y code");
-        
-        // Nettoyage
-        $this->executeCommand("rm -f /tmp/packages.microsoft.gpg");
-        
-        if ($result === 0) {
-            $this->printSuccess("VS Code installé");
-        } else {
-            $this->printError("Erreur lors de l'installation de VS Code");
-        }
-    }
-    
-    /**
-     * Installe Google Chrome
-     */
-    private function installChrome() {
-        $this->printStatus("Installation de Google Chrome...");
-        
-        // Téléchargement du paquet .deb
-        $result = $this->executeCommand("wget -q -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb");
-        if ($result !== 0) {
-            $this->printError("Erreur lors du téléchargement de Google Chrome");
-            return;
-        }
-        
-        // Installation du paquet
-        $this->executeCommand("sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb");
-        
-        // Correction des dépendances si nécessaire
-        $this->executeCommand("sudo apt-get install -f -y");
-        
-        // Nettoyage
-        $this->executeCommand("rm -f /tmp/google-chrome-stable_current_amd64.deb");
-        
-        $this->printSuccess("Google Chrome installé");
     }
     
     /**
@@ -268,40 +236,85 @@ class DevStackInstaller {
     }
     
     /**
-     * Démarre et active tous les services nécessaires
+     * Démarre, active et redémarre tous les services nécessaires
      */
     private function startServices() {
-        $this->printStatus("Démarrage des services...");
+        $this->printStatus("Configuration et démarrage des services...");
         
-        // Liste des services à démarrer et activer
-        $services = ['apache2', 'mysql', 'postgresql'];
+        // Liste des services à gérer
+        $services = ['apache2', 'mariadb', 'postgresql'];
         
+        // Activation des services pour démarrage automatique
         foreach ($services as $service) {
             $this->executeCommand("sudo systemctl enable $service");
+        }
+        
+        $this->printStatus("Démarrage initial des services...");
+        
+        // Démarrage des services
+        foreach ($services as $service) {
             $this->executeCommand("sudo systemctl start $service");
         }
         
-        // Redémarrage d'Apache pour prendre en compte PHP et Adminer
-        $this->executeCommand("sudo systemctl reload apache2");
+        $this->printStatus("Redémarrage des services pour prise en compte des configurations...");
         
-        $this->printSuccess("Services démarrés");
+        // Redémarrage des services pour s'assurer de la prise en compte des configurations
+        foreach ($services as $service) {
+            $this->executeCommand("sudo systemctl restart $service");
+        }
+        
+        // Vérification du statut des services
+        $this->printStatus("Vérification du statut des services...");
+        
+        foreach ($services as $service) {
+            if ($this->isServiceActive($service)) {
+                $this->printSuccess("$service actif");
+            } else {
+                $this->printWarning("$service non actif - tentative de redémarrage...");
+                $this->executeCommand("sudo systemctl restart $service");
+                
+                // Vérification après redémarrage
+                if ($this->isServiceActive($service)) {
+                    $this->printSuccess("$service redémarré avec succès");
+                } else {
+                    $this->printError("Impossible de démarrer $service");
+                }
+            }
+        }
+        
+        $this->printSuccess("Tous les services sont configurés et démarrés");
     }
     
     /**
-     * Exécute mysql_secure_installation de manière interactive
+     * Exécute mysql_secure_installation pour sécuriser MariaDB
      */
-    private function secureMySQL() {
-        $this->printStatus("Sécurisation de MySQL...");
-        $this->printWarning("Vous allez être invité à configurer la sécurité de MySQL.");
+    private function secureMariaDB() {
+        $this->printStatus("Sécurisation de MariaDB...");
+        $this->printWarning("Vous allez être invité à configurer la sécurité de MariaDB.");
         $this->printWarning("Répondez aux questions selon vos préférences de sécurité.");
         
-        // Attendre que MySQL soit complètement démarré
-        sleep(3);
+        // Attendre que MariaDB soit complètement démarré
+        sleep(5);
         
-        // Exécution interactive de mysql_secure_installation
+        // Exécution interactive de mysql_secure_installation (même commande pour MariaDB)
         system("sudo mysql_secure_installation");
         
-        $this->printSuccess("MySQL sécurisé");
+        // Redémarrage final de MariaDB après sécurisation
+        $this->printStatus("Redémarrage de MariaDB après sécurisation...");
+        $this->executeCommand("sudo systemctl restart mariadb");
+        
+        $this->printSuccess("MariaDB sécurisé et redémarré");
+    }
+    
+    /**
+     * Obtient le statut d'un service
+     * @param string $service Nom du service
+     * @return string Statut du service
+     */
+    private function getServiceStatus($service) {
+        $output = [];
+        exec("sudo systemctl is-active $service 2>/dev/null", $output);
+        return isset($output[0]) ? $output[0] : 'unknown';
     }
     
     /**
@@ -313,22 +326,30 @@ class DevStackInstaller {
         
         echo "=== RÉSUMÉ DES INSTALLATIONS ===\n";
         echo "✓ Apache 2 - http://localhost\n";
-        echo "✓ MySQL (sécurisé)\n";
+        echo "✓ MariaDB (sécurisé)\n";
         echo "✓ PostgreSQL\n";
-        echo "✓ PHP avec extensions\n";
+        echo "✓ PHP avec extensions complètes\n";
         echo "✓ Composer\n";
         echo "✓ Adminer - http://localhost/adminer\n";
-        echo "✓ VS Code\n";
-        echo "✓ Google Chrome\n";
         echo "✓ GParted\n";
         echo "✓ Node.js et npm\n";
         echo "✓ Git\n";
         echo "✓ curl\n";
         echo "\n";
         
+        echo "=== STATUT DES SERVICES ===\n";
+        $apache_status = $this->getServiceStatus('apache2');
+        $mariadb_status = $this->getServiceStatus('mariadb');
+        $postgresql_status = $this->getServiceStatus('postgresql');
+        
+        echo "Apache2: $apache_status\n";
+        echo "MariaDB: $mariadb_status\n";
+        echo "PostgreSQL: $postgresql_status\n";
+        echo "\n";
+        
         echo "=== VERSIONS INSTALLÉES ===\n";
         $this->executeCommand("apache2 -v | head -n1");
-        $this->executeCommand("mysql --version");
+        $this->executeCommand("mariadb --version");
         $this->executeCommand("psql --version");
         $this->executeCommand("php -v | head -n1");
         $this->executeCommand("composer --version");
@@ -337,18 +358,28 @@ class DevStackInstaller {
         $this->executeCommand("git --version");
         echo "\n";
         
+        echo "=== EXTENSIONS PHP INSTALLÉES ===\n";
+        echo "✓ php-cli, php-fpm, php-common, php-opcache\n";
+        echo "✓ php-mysql, php-pgsql, php-sqlite3\n";
+        echo "✓ php-gd, php-curl, php-zip, php-xml\n";
+        echo "✓ php-mbstring, php-json, php-intl, php-bcmath\n";
+        echo "✓ php-imagick, php-ldap, php-soap\n";
+        echo "✓ php-ctype, php-tokenizer, php-dom, php-fileinfo\n";
+        echo "\n";
+        
         echo "=== ACCÈS AUX SERVICES ===\n";
         echo "Apache: http://localhost\n";
         echo "Adminer: http://localhost/adminer\n";
-        echo "MySQL: Utilisez les identifiants configurés lors de mysql_secure_installation\n";
+        echo "MariaDB: Utilisez les identifiants configurés lors de mysql_secure_installation\n";
         echo "PostgreSQL: Utilisez 'sudo -u postgres psql' pour accéder en tant que postgres\n";
     }
     
     /**
-     * Méthode principale qui orchestrent toute l'installation
+     * Méthode principale qui orchestre toute l'installation
      */
     public function run() {
         echo "=== INSTALLATION STACK DE DÉVELOPPEMENT DEBIAN 12 ===\n";
+        echo "=== Apache + MariaDB + PostgreSQL + PHP (Extensions complètes) + Adminer ===\n";
         echo "\n";
         
         try {
@@ -358,12 +389,10 @@ class DevStackInstaller {
             // Installation étape par étape
             $this->updateSystem();
             $this->installBasePackages();
-            $this->installVSCode();
-            $this->installChrome();
             $this->installComposer();
             $this->installAdminer();
             $this->startServices();
-            $this->secureMySQL();
+            $this->secureMariaDB();
             
             // Résumé final
             $this->showSummary();
